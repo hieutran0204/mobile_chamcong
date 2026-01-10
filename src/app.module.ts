@@ -13,8 +13,7 @@ dotenv.config();
 @Module({
   imports: [
     MongooseModule.forRoot(
-      process.env.MONGO_URI ||
-        'mongodb+srv://tranminhhieu620:HieuDepZai@chamcong.knp7cdc.mongodb.net/?appName=ChamCong',
+      process.env.MONGO_URI || "ko có gi"
     ),
     MailerModule.forRoot({
       transport: {
