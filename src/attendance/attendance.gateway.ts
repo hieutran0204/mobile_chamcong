@@ -4,6 +4,7 @@ import {
   SubscribeMessage,
   MessageBody,
   ConnectedSocket,
+  OnGatewayConnection,
 } from '@nestjs/websockets';
 import { Inject, forwardRef } from '@nestjs/common';
 import { Server, WebSocket } from 'ws'; // Use 'ws' types
@@ -12,15 +13,26 @@ import { ScanDto } from './dto/scan.dto';
 import * as dotenv from 'dotenv';
 dotenv.config();
 
-@WebSocketGateway({ path: '/ws' }) // cors is handled by main adapter/ws config usually, but path is key
-export class AttendanceGateway {
+@WebSocketGateway({ path: '/ws', cors: true })
+export class AttendanceGateway implements OnGatewayConnection {
   @WebSocketServer()
   server!: Server;
 
   constructor(
     @Inject(forwardRef(() => AttendanceService))
-    private readonly attService: AttendanceService
+    private readonly attService: AttendanceService,
   ) {}
+
+  async handleConnection(client: WebSocket) {
+    console.log('Client connected');
+    // Sync current mode
+    const { mode } = this.attService.getMode();
+    let cmd = 'cmd_idle';
+    if (mode === 'CHECK_IN') cmd = 'cmd_checkin';
+    else if (mode === 'CHECK_OUT') cmd = 'cmd_checkout';
+
+    client.send(JSON.stringify({ event: cmd, data: {} }));
+  }
 
   // Helper to broadcast to all connected clients
   public broadcast(event: string, data: any) {
@@ -38,28 +50,29 @@ export class AttendanceGateway {
   async onScan(@MessageBody() data: ScanDto) {
     console.log('Received scan:', data);
     const res = await this.attService.handleScan(data.fingerId);
-    
+
     // Broadcast to all clients (UI apps)
     this.broadcast('attendance', res);
-    
-    // Return value is sent back to the sender only (the device)
-    // The device will receive: { "event": "scan", "data": response } provided by framework
-    // Or we can just return nothing if the device doesn't need confirmation
+
     return res;
   }
 
   // device sends: { "event": "enroll_result", "data": { "fingerId": 1, "success": true } }
   @SubscribeMessage('enroll_result')
-  async onEnrollResult(@MessageBody() data: { fingerId: number; success: boolean }) {
+  async onEnrollResult(
+    @MessageBody() data: { fingerId: number; success: boolean },
+  ) {
     console.log('Enroll result:', data);
+
+    // Update DB first
+    await this.attService.finishEnroll(data.fingerId, data.success);
+
     // Notify clients (Owner UI)
     this.broadcast('enroll_update', data);
   }
 
   // Called by Controller
   sendEnrollCmd(fingerId: number) {
-    // We need to broadcast this because we don't track specific device connections easily here
-    // Optimally we would target the specific ESP32, but broadcast is fine for single device setup
     this.broadcast('cmd_enroll', { fingerId });
   }
 

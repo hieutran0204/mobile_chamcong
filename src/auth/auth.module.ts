@@ -6,6 +6,7 @@ import { User, UserSchema } from './user.schema';
 import { AuthService } from './auth.service';
 import { AuthController } from './auth.controller';
 import { JwtStrategy } from './jwt.strategy';
+import { AttendanceModule } from '../attendance/attendance.module';
 import { EmployeesModule } from '../employees/employees.module';
 import * as dotenv from 'dotenv';
 dotenv.config();
@@ -20,7 +21,7 @@ dotenv.config();
         expiresIn: (process.env.JWT_EXPIRES_IN || '7d') as any,
       },
     }),
-    EmployeesModule,
+    AttendanceModule,
   ],
   providers: [AuthService, JwtStrategy],
   controllers: [AuthController],

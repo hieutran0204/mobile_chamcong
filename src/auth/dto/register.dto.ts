@@ -1,7 +1,28 @@
-import { IsString, IsNotEmpty, IsOptional } from 'class-validator';
+import { IsString, IsNotEmpty, IsOptional, MinLength, IsMongoId } from 'class-validator';
 
 export class RegisterDto {
-  @IsString() @IsNotEmpty() username: string;
-  @IsString() @IsNotEmpty() password: string;
-  @IsOptional() @IsString() role?: string;
+  @IsNotEmpty()
+  @IsString()
+  username: string;
+
+  @IsNotEmpty()
+  @IsString()
+  @MinLength(6)
+  password: string;
+
+  @IsOptional()
+  @IsString()
+  name?: string;
+
+  @IsOptional()
+  @IsString()
+  position?: string;
+
+  @IsOptional()
+  @IsMongoId()
+  employeeId?: string;
+
+  @IsOptional()
+  @IsString()
+  role?: string;
 }

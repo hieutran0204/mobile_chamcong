@@ -7,7 +7,9 @@ import {
   Param,
   Put,
   Delete,
+  Request,
 } from '@nestjs/common';
+import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { EmployeesService } from './employees.service';
 import { EventsService } from '../ws-server/events.service';
 import { CreateEmployeeDto } from './dto/create-employee.dto';
@@ -15,6 +17,8 @@ import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RolesGuard } from '../common/roles.guard';
 import { Roles } from '../common/roles.decorator';
 
+@ApiTags('Employees')
+@ApiBearerAuth()
 @Controller('employees')
 @UseGuards(JwtAuthGuard, RolesGuard)
 export class EmployeesController {
@@ -25,10 +29,11 @@ export class EmployeesController {
 
   @Post()
   @Roles('owner')
-  async create(@Body() dto: CreateEmployeeDto) {
+  async create(@Body() dto: CreateEmployeeDto, @Request() req) {
     try {
-      // create record with no fingerId (owner will trigger enroll)
-      const emp = await this.service.create(dto);
+      // create record with ownerId
+      const ownerId = req.user.userId;
+      const emp = await this.service.create(dto, ownerId);
       return emp;
     } catch (e: any) {
       return { error: e.message, stack: e.stack, details: e };
@@ -37,8 +42,8 @@ export class EmployeesController {
 
   @Get()
   @Roles('owner')
-  async findAll() {
-    return this.service.findAll();
+  async findAll(@Request() req) {
+    return this.service.findAll(req.user.userId);
   }
 
   @Get(':id')
@@ -62,6 +67,18 @@ export class EmployeesController {
     return this.service.remove(id);
   }
 
+  @Post(':id/deactivate')
+  @Roles('owner')
+  async deactivate(@Param('id') id: string) {
+    return this.service.update(id, { isActive: false } as any);
+  }
+
+  @Post(':id/activate')
+  @Roles('owner')
+  async activate(@Param('id') id: string) {
+    return this.service.update(id, { isActive: true } as any);
+  }
+
   @Post(':id/enroll-start')
   @Roles('owner')
   async startEnrollment(@Param('id') id: string) {
@@ -69,11 +86,9 @@ export class EmployeesController {
     const nextFingerId = await this.service.getNextFingerId();
 
     // Send command to device
-    // ESP32 expects: event "cmd_enroll" with data { fingerId: int }
-    this.eventsService.sendCommandToDevice('cmd_enroll', {
-      fingerId: nextFingerId,
-      employeeId: emp._id, // Optional, for context if needed
-      name: emp.name,
+    // ESP32 expects: cmd "ENROLL_MODE" with userId
+    this.eventsService.sendCommandToDevice('ENROLL_MODE', {
+      userId: id,
     });
     return { message: 'Enrollment command sent', fingerId: nextFingerId };
   }

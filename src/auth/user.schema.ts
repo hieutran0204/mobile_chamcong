@@ -4,8 +4,9 @@ import { Document, Types } from 'mongoose';
 export type UserDocument = User & Document;
 
 export enum Role {
+  ADMIN = 'admin',
   OWNER = 'owner',
-  EMPLOYEE = 'employee',
+  EMPLOYEE = 'employee', // Kept for legacy compatibility if needed, but not used for new logic
 }
 
 @Schema({ timestamps: true })
@@ -13,15 +14,26 @@ export class User {
   @Prop({ required: true, unique: true })
   username: string;
 
-  // password có thể undefined khi dùng Google/Facebook login sau này
+  @Prop({ default: null })
+  email?: string;
+
   @Prop({ required: true })
   password?: string;
+
+  @Prop({ required: true })
+  name: string;
+
+  @Prop()
+  avatar?: string;
 
   @Prop({ enum: Role, default: Role.EMPLOYEE })
   role: Role;
 
-  @Prop({ type: Types.ObjectId, ref: 'Employee' })
-  employeeId?: Types.ObjectId;
+  @Prop()
+  companyName?: string;
+
+  @Prop({ default: true })
+  isActive: boolean;
 }
 
 export const UserSchema = SchemaFactory.createForClass(User);

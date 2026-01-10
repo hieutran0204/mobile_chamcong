@@ -30,4 +30,9 @@ export class EventsService {
       this.gateway.broadcastToAdmin({ event, data });
     }
   }
+
+  startEnroll(userId: string) {
+    console.log(`Starting enroll for user: ${userId}`);
+    this.sendCommandToDevice('ENROLL_MODE', { userId });
+  }
 }

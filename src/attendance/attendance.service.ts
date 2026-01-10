@@ -1,6 +1,6 @@
 import { Injectable, Inject, forwardRef } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
-import { Model } from 'mongoose';
+import { Model, Types } from 'mongoose';
 import { Attendance, AttendanceDocument } from './attendance.schema';
 import { EmployeesService } from '../employees/employees.service';
 import { AttendanceGateway } from './attendance.gateway';
@@ -20,18 +20,14 @@ export class AttendanceService {
   setMode(mode: 'CHECK_IN' | 'CHECK_OUT' | 'IDLE') {
     this.currentMode = mode;
     console.log(`System mode set to: ${this.currentMode}`);
-    
+
     // Notify ESP32
     if (mode === 'CHECK_IN') {
       this.gateway.broadcast('cmd_checkin', {}); // Send command to device
     } else if (mode === 'CHECK_OUT') {
       this.gateway.broadcast('cmd_checkout', {}); // Send command to device
     } else {
-      // IDLE or generic
-      // Maybe we want to send cmd_idle if device supports it, but user code didn't show it.
-      // User code resets to IDLE after scan or timeout usually, but explicitly setting IDLE might be good?
-      // User code has: currentMode = MODE_IDLE in webSocketEvent but only on disconnect or inside handlers.
-      // Actually user code doesn't have a 'cmd_idle'.
+      this.gateway.broadcast('cmd_idle', {}); // Send command to device
     }
 
     return { mode: this.currentMode };
@@ -41,33 +37,67 @@ export class AttendanceService {
     return { mode: this.currentMode };
   }
 
+  // Helper to get YYYY-MM-DD in Vietnam Time (UTC+7)
+  private getVNDateString(d: Date = new Date()): string {
+    const vnTime = new Date(d.getTime() + 7 * 60 * 60 * 1000);
+    return vnTime.toISOString().slice(0, 10);
+  }
+
+  // Helper to get Date object shifted to VN Time (so DB saves it as VN time visually)
+  private getVNTime(d: Date = new Date()): Date {
+    return new Date(d.getTime() + 7 * 60 * 60 * 1000);
+  }
+
   // Queries
   async create(employeeId: string) {
-    const today = new Date().toISOString().slice(0, 10);
+    const today = this.getVNDateString();
+    const now = new Date();
+    const vnNow = this.getVNTime(now);
+
     return this.attModel.create({
       employeeId,
       date: today,
-      checkIn: new Date(),
+      checkIn: vnNow,
       status: 'present',
+      createdAt: vnNow,
+      updatedAt: vnNow,
     });
   }
 
   async findAll() {
-    return this.attModel.find().populate('employeeId', 'name position').sort({ checkIn: -1 }).exec();
+    return this.attModel
+      .find()
+      .populate('employeeId', 'name')
+      .sort({ checkIn: -1 })
+      .exec();
   }
 
   async findCheckIns() {
-    // Return all records that have a checkIn time
-    return this.attModel.find({ checkIn: { $ne: null } }).populate('employeeId', 'name position').sort({ checkIn: -1 }).exec();
+    return this.attModel
+      .find({ checkIn: { $ne: null } })
+      .populate('employeeId', 'name')
+      .sort({ checkIn: -1 })
+      .exec();
   }
 
   async findCheckOuts() {
-    // Return all records that have a checkOut time
-    return this.attModel.find({ checkOut: { $ne: null } }).populate('employeeId', 'name position').sort({ checkOut: -1 }).exec();
+    return this.attModel
+      .find({ checkOut: { $ne: null } })
+      .populate('employeeId', 'name')
+      .sort({ checkOut: -1 })
+      .exec();
   }
 
-  async findByEmployee(employeeId: string) {
-    return this.attModel.find({ employeeId }).sort({ checkIn: -1 }).exec();
+  async findByEmployee(employeeId: string, filter?: { startDate?: string; endDate?: string }) {
+    const query: any = { employeeId };
+
+    if (filter?.startDate || filter?.endDate) {
+      query.date = {};
+      if (filter.startDate) query.date.$gte = filter.startDate;
+      if (filter.endDate) query.date.$lte = filter.endDate;
+    }
+
+    return this.attModel.find(query).sort({ checkIn: -1 }).exec();
   }
 
   async handleScan(fingerId: number) {
@@ -84,45 +114,72 @@ export class AttendanceService {
       return { success: false, message: 'Fingerprint not found' };
     }
 
-    const today = new Date().toISOString().slice(0, 10);
-    const timestamp = new Date();
-    
+    const now = new Date();
+    const timestamp = this.getVNTime(now); // Shift to VN Time
+    const today = this.getVNDateString(now);
+
     // 2. Find latest attendance for today
-    const latest = await this.attModel.findOne({
-      employeeId: employee._id,
-      date: today,
-    }).sort({ createdAt: -1 }).exec();
+    const empId = (employee as any)._id; 
+    const latest = await this.attModel
+      .findOne({
+        employeeId: empId,
+        date: today,
+      })
+      .sort({ createdAt: -1 })
+      .exec();
 
     let type = '';
 
     if (this.currentMode === 'CHECK_IN') {
       if (latest) {
-        return { success: false, message: 'Already checked in today', employeeName: employee.name };
+        return {
+          success: false,
+          message: 'Already checked in today',
+          employeeName: employee.name,
+        };
       }
-      
+
       // Create Check-in
       await this.attModel.create({
-        employeeId: employee._id,
+        employeeId: empId,
         date: today,
         checkIn: timestamp,
         status: 'present',
+        createdAt: timestamp,
+        updatedAt: timestamp,
       });
       type = 'check-in';
-
     } else if (this.currentMode === 'CHECK_OUT') {
       if (!latest) {
-        return { success: false, message: 'No check-in found for today', employeeName: employee.name };
+        return {
+          success: false,
+          message: 'No check-in found for today',
+          employeeName: employee.name,
+        };
       }
       if (latest.checkOut) {
-        return { success: false, message: 'Already checked out', employeeName: employee.name };
+        return {
+          success: false,
+          message: 'Already checked out',
+          employeeName: employee.name,
+        };
       }
 
       // Update Check-out
       latest.checkOut = timestamp;
+      latest.updatedAt = timestamp;
+      
+      // Calculate work hours
+      const checkInTime = new Date(latest.checkIn).getTime();
+      const checkOutTime = timestamp.getTime();
+      const diffMs = checkOutTime - checkInTime;
+      const hours = diffMs / (1000 * 60 * 60); 
+      latest.work_hours = parseFloat(hours.toFixed(2));
+
       await latest.save();
       type = 'check-out';
     }
-    
+
     // 5. Return info for ws broadcast
     return {
       success: true,
@@ -130,5 +187,78 @@ export class AttendanceService {
       timestamp,
       type,
     };
+  }
+  // State to track who is currently enrolling
+  private pendingEnrollUserId: string | null = null;
+  
+  // Encyclopedia (Called by Controller -> Service -> Gateway)
+  async startEnroll(userId: string, fingerId: number) {
+    this.pendingEnrollUserId = userId;
+    console.log(`Starting enrollment for User ${userId} with Finger ID ${fingerId}`);
+    
+    this.gateway.sendEnrollCmd(fingerId);
+    return { success: true, message: 'Enrollment command sent', fingerId };
+  }
+
+  async finishEnroll(fingerId: number, success: boolean) {
+    if (!this.pendingEnrollUserId) {
+      console.warn('Received enroll result but no pending user enrollment found.');
+      return;
+    }
+
+    if (success) {
+      console.log(`Enrollment SUCCESS for User ${this.pendingEnrollUserId}, Finger ID ${fingerId}`);
+      await this.employeesService.updateFingerId(this.pendingEnrollUserId, fingerId);
+    } else {
+      console.log(`Enrollment FAILED for User ${this.pendingEnrollUserId}`);
+    }
+
+    // Reset state
+    this.pendingEnrollUserId = null;
+  }
+
+  // Manual Attendance by Admin
+  async manualCheckIn(employeeId: string, timestamp: Date) {
+      const storedTime = this.getVNTime(timestamp);
+      const date = this.getVNDateString(timestamp);
+      const nowFn = () => this.getVNTime(new Date());
+      
+      const existing = await this.attModel.findOne({ employeeId, date }).exec();
+      if (existing) {
+          throw new Error('Attendance record already exists for this date. Check-out only.');
+      }
+
+      await this.attModel.create({
+          employeeId,
+          date,
+          checkIn: storedTime,
+          status: 'present (manual)',
+          createdAt: nowFn(),
+          updatedAt: nowFn(),
+      });
+      return { success: true, message: 'Manual Check-in Success' };
+  }
+
+  async manualCheckOut(employeeId: string, timestamp: Date) {
+      const storedTime = this.getVNTime(timestamp);
+      const date = this.getVNDateString(timestamp);
+      const latest = await this.attModel.findOne({ employeeId, date }).exec();
+
+      if (!latest) {
+          throw new Error('No check-in found for this date. Cannot check-out.');
+      }
+
+      latest.checkOut = storedTime; // Fix: use storedTime (shifted) instead of raw timestamp
+      latest.updatedAt = this.getVNTime(new Date());
+
+       // Calculate work hours
+      const checkInTime = new Date(latest.checkIn).getTime();
+      const checkOutTime = storedTime.getTime();
+      const diffMs = checkOutTime - checkInTime;
+      const hours = diffMs / (1000 * 60 * 60); 
+      latest.work_hours = parseFloat(hours.toFixed(2));
+
+      await latest.save();
+      return { success: true, message: 'Manual Check-out Success' };
   }
 }
