@@ -10,6 +10,7 @@ import {
 import { Server, WebSocket } from 'ws';
 import { EventsService } from './events.service';
 import { AttendanceService } from '../attendance/attendance.service';
+import { EmployeesService } from '../employees/employees.service';
 import { IncomingMessage } from 'http';
 
 @WebSocketGateway({ cors: true, path: '/ws' })
@@ -23,6 +24,7 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
   constructor(
     private readonly eventsService: EventsService,
     private readonly attendanceService: AttendanceService,
+    private readonly employeesService: EmployeesService,
   ) {
     // Pass instance to service so service can use it (circular dependency workaround or just simple injection)
     // Actually better to handle broadcast here or verify if @WebSocketServer is enough in Service
@@ -70,10 +72,21 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
     }
   }
 
-  // device sends: { "event": "enroll_result", "data": { "fingerId": 1, "success": true } }
+  // device sends: { "status": "SUCCESS", "userId": "...", "fingerprintId": 15 }
   @SubscribeMessage('enroll_result')
   async onEnrollResult(@MessageBody() data: any) {
     console.log('Received enroll_result:', data);
+
+    // Update DB if success
+    if (data.status === 'SUCCESS' && data.userId && data.fingerprintId !== undefined) {
+       try {
+         await this.employeesService.updateFingerId(data.userId, data.fingerprintId);
+         console.log(`Updated fingerId ${data.fingerprintId} for user ${data.userId}`);
+       } catch (e) {
+         console.error('Failed to update fingerId:', e);
+       }
+    }
+
     // Notify clients (Owner Admin)
     this.broadcastToAdmin({ event: 'enroll-result', data });
   }

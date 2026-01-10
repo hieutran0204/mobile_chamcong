@@ -1,4 +1,14 @@
-import { Controller, Get, Param, UseGuards, Request, Post, Body } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Param,
+  UseGuards,
+  Request,
+  Post,
+  Body,
+  NotFoundException,
+} from '@nestjs/common';
+import { ApiBearerAuth, ApiTags, ApiBody } from '@nestjs/swagger';
 import { AttendanceService } from './attendance.service';
 import { AttendanceGateway } from './attendance.gateway';
 import { EmployeesService } from '../employees/employees.service';
@@ -6,14 +16,33 @@ import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RolesGuard } from '../common/roles.guard';
 import { Roles } from '../common/roles.decorator';
 
+import { ManualAttendanceDto } from './dto/manual-attendance.dto';
+
+@ApiTags('Attendance')
+@ApiBearerAuth()
 @Controller('attendance')
 @UseGuards(JwtAuthGuard, RolesGuard)
 export class AttendanceController {
   constructor(
     private readonly service: AttendanceService,
     private readonly gateway: AttendanceGateway,
-    private readonly employeesService: EmployeesService, 
+    private readonly employeesService: EmployeesService,
   ) {}
+
+  @Post('manual')
+  @Roles('owner')
+  @ApiBody({ type: ManualAttendanceDto })
+  async manualAttendance(@Body() body: ManualAttendanceDto) {
+    // date: YYYY-MM-DD, time: HH:mm
+    // Force Vietnam Timezone (+07:00)
+    const dateTime = new Date(`${body.date}T${body.time}:00+07:00`);
+    
+    if (body.type === 'check-in') {
+      return this.service.manualCheckIn(body.employeeId, dateTime);
+    } else {
+      return this.service.manualCheckOut(body.employeeId, dateTime);
+    }
+  }
 
   @Get()
   @Roles('owner')
@@ -25,7 +54,7 @@ export class AttendanceController {
   @Roles('owner')
   async setMode(@Param('action') action: string) {
     let mode: 'CHECK_IN' | 'CHECK_OUT' | 'IDLE' = 'IDLE';
-    
+
     switch (action.toLowerCase()) {
       case 'check-in':
         mode = 'CHECK_IN';
@@ -61,13 +90,6 @@ export class AttendanceController {
     return this.service.findCheckOuts();
   }
 
-  @Get('me')
-  @Roles('employee', 'owner')
-  async findMyAttendance(@Request() req) {
-    // req.user is populated by JwtStrategy
-    // employeeId is now guaranteed if it was in the token
-    return this.service.findByEmployee(req.user.employeeId);
-  }
 
   @Get('employee/:id')
   @Roles('owner')
@@ -75,17 +97,16 @@ export class AttendanceController {
     return this.service.findByEmployee(id);
   }
 
-  @Post('start-enroll/:employeeId')
+  @Post('start-enroll/:id')
   @Roles('owner')
-  async startEnroll(@Param('employeeId') employeeId: string) {
-    // 1. Assign ID
-    const emp = await this.employeesService.assignFingerId(employeeId);
-    
-    // 2. Send Command
-    if (emp && emp.fingerId) {
-       this.gateway.sendEnrollCmd(emp.fingerId);
+  async startEnroll(@Param('id') id: string) {
+    const emp = await this.employeesService.getEmptyFingerId(id);
+
+    if (!emp) {
+      throw new NotFoundException('Employee not found');
     }
-    
-    return { message: 'Enrollment started', fingerId: emp.fingerId };
+    if (emp.fingerId) {
+      await this.service.startEnroll(id, emp.fingerId);
+    }
   }
 }
