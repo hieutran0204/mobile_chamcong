@@ -31,16 +31,18 @@ export class EmployeesService {
     return this.employeeModel.find({ ownerId }).exec();
   }
 
-  async findOne(id: string): Promise<Employee | null> {
-    return this.employeeModel.findById(id).exec();
+  async findOne(id: string, ownerId: string): Promise<Employee | null> {
+    const employee = await this.employeeModel.findOne({ _id: id, ownerId }).exec();
+    if (!employee) throw new NotFoundException('Employee not found or access denied');
+    return employee;
   }
 
   // Update employee info
-  async update(id: string, updateDto: any): Promise<Employee> {
+  async update(id: string, updateDto: any, ownerId: string): Promise<Employee> {
     const e = await this.employeeModel
-      .findByIdAndUpdate(id, updateDto, { new: true })
+      .findOneAndUpdate({ _id: id, ownerId }, updateDto, { new: true })
       .exec();
-    if (!e) throw new NotFoundException();
+    if (!e) throw new NotFoundException('Employee not found or access denied');
     return e;
   }
 
@@ -49,8 +51,10 @@ export class EmployeesService {
     return this.employeeModel.findByIdAndUpdate(id, { fingerId }, { new: true }).exec();
   }
 
-  async remove(id: string): Promise<Employee | null> {
-    return this.employeeModel.findByIdAndDelete(id).exec();
+  async remove(id: string, ownerId: string): Promise<Employee | null> {
+    const deleted = await this.employeeModel.findOneAndDelete({ _id: id, ownerId }).exec();
+    if (!deleted) throw new NotFoundException('Employee not found or access denied');
+    return deleted;
   }
   
   // Helper to find next available ID for device Sync
@@ -69,11 +73,15 @@ export class EmployeesService {
   }
 
   // Deactivate/Activate
-  async deactivate(id: string): Promise<Employee | null> {
-    return this.employeeModel.findByIdAndUpdate(id, { isActive: false }, { new: true }).exec();
+  async deactivate(id: string, ownerId: string): Promise<Employee | null> {
+    const e = await this.employeeModel.findOneAndUpdate({ _id: id, ownerId }, { isActive: false }, { new: true }).exec();
+    if (!e) throw new NotFoundException('Employee not found or access denied');
+    return e;
   }
 
-  async activate(id: string): Promise<Employee | null> {
-    return this.employeeModel.findByIdAndUpdate(id, { isActive: true }, { new: true }).exec();
+  async activate(id: string, ownerId: string): Promise<Employee | null> {
+    const e = await this.employeeModel.findOneAndUpdate({ _id: id, ownerId }, { isActive: true }, { new: true }).exec();
+    if (!e) throw new NotFoundException('Employee not found or access denied');
+    return e;
   }
 }

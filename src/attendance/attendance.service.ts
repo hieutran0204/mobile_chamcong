@@ -64,31 +64,49 @@ export class AttendanceService {
     });
   }
 
-  async findAll() {
+
+  async findAll(ownerId: string) {
+    // 1. Get employees of this owner
+    const employees = await this.employeesService.findAll(ownerId);
+    const result = [];
+    
+    // 2. This is inefficient but works without complex aggregations for now.
+    // Better: find({ employeeId: { $in: [...] } })
+    const empIds = employees.map(e => (e as any)._id);
+
     return this.attModel
-      .find()
+      .find({ employeeId: { $in: empIds } })
       .populate('employeeId', 'name')
       .sort({ checkIn: -1 })
       .exec();
   }
 
-  async findCheckIns() {
+  async findCheckIns(ownerId: string) {
+    const employees = await this.employeesService.findAll(ownerId);
+    const empIds = employees.map(e => (e as any)._id);
+
     return this.attModel
-      .find({ checkIn: { $ne: null } })
+      .find({ checkIn: { $ne: null }, employeeId: { $in: empIds } })
       .populate('employeeId', 'name')
       .sort({ checkIn: -1 })
       .exec();
   }
 
-  async findCheckOuts() {
+  async findCheckOuts(ownerId: string) {
+    const employees = await this.employeesService.findAll(ownerId);
+    const empIds = employees.map(e => (e as any)._id);
+
     return this.attModel
-      .find({ checkOut: { $ne: null } })
+      .find({ checkOut: { $ne: null }, employeeId: { $in: empIds } })
       .populate('employeeId', 'name')
       .sort({ checkOut: -1 })
       .exec();
   }
 
-  async findByEmployee(employeeId: string, filter?: { startDate?: string; endDate?: string }) {
+  async findByEmployee(employeeId: string, ownerId: string, filter?: { startDate?: string; endDate?: string }) {
+    // Check ownership
+    await this.employeesService.findOne(employeeId, ownerId);
+
     const query: any = { employeeId };
 
     if (filter?.startDate || filter?.endDate) {
@@ -217,8 +235,11 @@ export class AttendanceService {
     this.pendingEnrollUserId = null;
   }
 
-  // Manual Attendance by Admin
-  async manualCheckIn(employeeId: string, timestamp: Date) {
+  // Manual Attendance by Admin (Owner)
+  async manualCheckIn(employeeId: string, timestamp: Date, ownerId: string) {
+      // Check ownership
+      await this.employeesService.findOne(employeeId, ownerId);
+
       const storedTime = this.getVNTime(timestamp);
       const date = this.getVNDateString(timestamp);
       const nowFn = () => this.getVNTime(new Date());
@@ -239,7 +260,10 @@ export class AttendanceService {
       return { success: true, message: 'Manual Check-in Success' };
   }
 
-  async manualCheckOut(employeeId: string, timestamp: Date) {
+  async manualCheckOut(employeeId: string, timestamp: Date, ownerId: string) {
+      // Check ownership
+      await this.employeesService.findOne(employeeId, ownerId);
+
       const storedTime = this.getVNTime(timestamp);
       const date = this.getVNDateString(timestamp);
       const latest = await this.attModel.findOne({ employeeId, date }).exec();

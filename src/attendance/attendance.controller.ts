@@ -32,22 +32,22 @@ export class AttendanceController {
   @Post('manual')
   @Roles('owner')
   @ApiBody({ type: ManualAttendanceDto })
-  async manualAttendance(@Body() body: ManualAttendanceDto) {
+  async manualAttendance(@Body() body: ManualAttendanceDto, @Request() req) {
     // date: YYYY-MM-DD, time: HH:mm
     // Force Vietnam Timezone (+07:00)
     const dateTime = new Date(`${body.date}T${body.time}:00+07:00`);
     
     if (body.type === 'check-in') {
-      return this.service.manualCheckIn(body.employeeId, dateTime);
+      return this.service.manualCheckIn(body.employeeId, dateTime, (req.user as any).userId);
     } else {
-      return this.service.manualCheckOut(body.employeeId, dateTime);
+      return this.service.manualCheckOut(body.employeeId, dateTime, (req.user as any).userId);
     }
   }
 
   @Get()
   @Roles('owner')
-  async findAll() {
-    return this.service.findAll();
+  async findAll(@Request() req) {
+    return this.service.findAll(req.user.userId);
   }
 
   @Post('mode/:action')
@@ -80,21 +80,21 @@ export class AttendanceController {
 
   @Get('check-ins')
   @Roles('owner')
-  async findCheckIns() {
-    return this.service.findCheckIns();
+  async findCheckIns(@Request() req) {
+    return this.service.findCheckIns(req.user.userId);
   }
 
   @Get('check-outs')
   @Roles('owner')
-  async findCheckOuts() {
-    return this.service.findCheckOuts();
+  async findCheckOuts(@Request() req) {
+    return this.service.findCheckOuts(req.user.userId);
   }
 
 
   @Get('employee/:id')
   @Roles('owner')
-  async findByEmployee(@Param('id') id: string) {
-    return this.service.findByEmployee(id);
+  async findByEmployee(@Param('id') id: string, @Request() req) {
+    return this.service.findByEmployee(id, req.user.userId);
   }
 
   @Post('start-enroll/:id')
