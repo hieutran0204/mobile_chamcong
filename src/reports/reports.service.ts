@@ -11,13 +11,15 @@ export class ReportsService {
     @InjectModel(Employee.name) private employeeModel: Model<EmployeeDocument>,
   ) {}
 
-  async generateSummary(from: string, to: string) {
-    // 1. Get all employees
-    const employees = await this.employeeModel.find();
+  async generateSummary(from: string, to: string, ownerId: string) {
+    // 1. Get all employees of THIS owner
+    const employees = await this.employeeModel.find({ ownerId });
+    const empIds = employees.map(e => e._id);
     
-    // 2. Fetch attendance in range
+    // 2. Fetch attendance in range for THESE employees
     const query = {
-        date: { $gte: from, $lte: to }
+        date: { $gte: from, $lte: to },
+        employeeId: { $in: empIds } // Isolation
     };
     
     const attendances = await this.attModel.find(query).exec();
@@ -28,8 +30,6 @@ export class ReportsService {
         
         const totalWorkHours = empAtt.reduce((sum, a) => sum + (a.work_hours || 0), 0);
         const daysPresent = empAtt.length;
-        // Simple logic: If we had a schedule, we could calc absent days. 
-        // For now, just reporting what we recorded.
 
         return {
             employeeId: emp._id,
@@ -37,7 +37,7 @@ export class ReportsService {
             email: emp.email,
             daysPresent,
             totalWorkHours: parseFloat(totalWorkHours.toFixed(2)),
-            attendances: empAtt // Optional: include details? or keep summary clean.
+            attendances: empAtt 
         };
     });
 

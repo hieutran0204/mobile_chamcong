@@ -80,32 +80,4 @@ export class EmployeesController {
     return this.service.update(id, { isActive: true } as any, req.user.userId);
   }
 
-  @Post(':id/enroll-start')
-  @Roles('owner')
-  async startEnrollment(@Param('id') id: string, @Request() req) {
-    // Verify ownership first
-    const emp = await this.service.findOne(id, req.user.userId);
-    const nextFingerId = await this.service.getNextFingerId();
-
-    // Send command to device
-    // ESP32 expects: cmd "ENROLL_MODE" with userId
-    this.eventsService.sendCommandToDevice('ENROLL_MODE', {
-      userId: id,
-    });
-    return { message: 'Enrollment command sent', fingerId: nextFingerId };
-  }
-
-  @Post(':id/enroll-confirm')
-  @Roles('owner')
-  async confirmEnrollment(
-    @Param('id') id: string,
-    @Body('fingerId') fingerId: number,
-    @Request() req,
-  ) {
-    if (fingerId === undefined) {
-      throw new Error('fingerId is required');
-    }
-    // Check ownership by calling update with ownerId
-    return this.service.update(id, { fingerId }, req.user.userId);
-  }
 }

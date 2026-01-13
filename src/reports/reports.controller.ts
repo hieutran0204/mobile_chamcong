@@ -1,4 +1,4 @@
-import { Controller, Get, Query, UseGuards } from '@nestjs/common';
+import { Controller, Get, Query, UseGuards, Request } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { ReportsService } from './reports.service';
 import { Roles } from '../common/roles.decorator';
@@ -17,7 +17,8 @@ export class ReportsController {
   async getSummary(
     @Query('from') from: string,
     @Query('to') to: string,
+    @Request() req,
   ) {
-    return this.reportsService.generateSummary(from, to);
+    return this.reportsService.generateSummary(from, to, req.user.userId);
   }
 }
