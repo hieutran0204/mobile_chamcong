@@ -7,6 +7,7 @@ import { AttendanceModule } from './attendance/attendance.module';
 import { PayrollModule } from './payroll/payroll.module';
 import { ReportsModule } from './reports/reports.module';
 import { WsServerModule } from './ws-server/ws-server.module';
+import { UsersModule } from './users/users.module';
 import * as dotenv from 'dotenv';
 dotenv.config();
 
@@ -35,6 +36,7 @@ dotenv.config();
     PayrollModule,
     ReportsModule,
     WsServerModule,
+    UsersModule,
   ],
 })
 export class AppModule {}
