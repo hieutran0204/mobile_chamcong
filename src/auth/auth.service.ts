@@ -4,6 +4,7 @@ import {
   BadRequestException,
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
+import { MailerService } from '@nestjs-modules/mailer';
 import * as bcrypt from 'bcryptjs';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
@@ -14,6 +15,7 @@ export class AuthService {
   constructor(
     @InjectModel(User.name) private userModel: Model<UserDocument>,
     private jwt: JwtService,
+    private readonly mailerService: MailerService,
   ) {}
 
   async registerOwner(username: string, password: string, name: string) {
@@ -56,7 +58,7 @@ export class AuthService {
     username: string,
     password: string,
   ): Promise<UserDocument | null> {
-    const user = await this.userModel.findOne({ username }).exec();
+    const user = await this.userModel.findOne({ username }).select('+password').exec();
     if (!user || !user.password) return null;
 
     const match = await bcrypt.compare(password, user.password);
@@ -67,6 +69,77 @@ export class AuthService {
     const user = await this.validateUser(username, password);
     if (!user) throw new UnauthorizedException('Invalid credentials');
 
+    // 2FA Check
+    if (user.isTwoFactorEnabled) {
+      // 1. Generate OTP
+      const otp = Math.floor(100000 + Math.random() * 900000).toString();
+      const expires = new Date();
+      expires.setMinutes(expires.getMinutes() + 5); // 5 mins
+
+      // 2. Save to DB
+      user.otp = otp;
+      user.otpExpires = expires;
+      await user.save();
+
+      // 3. Send Email
+      const email = user.email;
+      if (email) {
+          try {
+            await this.mailerService.sendMail({
+                to: email,
+                subject: 'Login OTP Code - Cham Cong App',
+                html: `<p>Your OTP code is: <b>${otp}</b></p><p>Valid for 5 minutes.</p>`
+            });
+            console.log(`OTP sent to ${email}`);
+          } catch (e) {
+              console.error('Send mail failed:', e);
+              // Fallback? Or just log.
+          }
+      } else {
+        console.warn(`User ${username} has 2FA enabled but no email!`);
+      }
+
+      return {
+          requires2FA: true,
+          message: 'OTP sent to email',
+          email: user.email // Hint for frontend
+      };
+    }
+
+    // No 2FA -> Issue Token directly
+    return this.generateToken(user);
+  }
+
+  async verify2FA(username: string, otp: string) {
+      const user = await this.userModel.findOne({ username }).select('+otp +otpExpires +role +name +username +email +companyName').exec();
+      if (!user) throw new UnauthorizedException('User not found');
+
+      if (!user.otp || !user.otpExpires) {
+          throw new UnauthorizedException('No OTP request found. Please login again.');
+      }
+
+      if (new Date() > user.otpExpires) {
+          throw new UnauthorizedException('OTP Expired');
+      }
+
+      if (user.otp !== otp) {
+          throw new UnauthorizedException('Invalid OTP');
+      }
+
+      // Valid -> Clear OTP
+      user.otp = undefined;
+      user.otpExpires = undefined;
+      await user.save();
+
+      return this.generateToken(user);
+  }
+
+  async enable2FA(userId: string, enable: boolean) {
+      await this.userModel.findByIdAndUpdate(userId, { isTwoFactorEnabled: enable });
+      return { success: true, isTwoFactorEnabled: enable };
+  }
+
+  private generateToken(user: any) {
     const payload = {
       sub: user._id.toString(),
       username: user.username,
@@ -82,6 +155,7 @@ export class AuthService {
         name: user.name,
         companyName: user.companyName,
         email: user.email,
+        isTwoFactorEnabled: user.isTwoFactorEnabled, // Inform frontend
       },
     };
   }
