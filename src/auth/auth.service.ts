@@ -81,20 +81,18 @@ export class AuthService {
       user.otpExpires = expires;
       await user.save();
 
-      // 3. Send Email
+      // 3. Send Email (Non-blocking)
       const email = user.email;
       if (email) {
-          try {
-            await this.mailerService.sendMail({
-                to: email,
-                subject: 'Login OTP Code - Cham Cong App',
-                html: `<p>Your OTP code is: <b>${otp}</b></p><p>Valid for 5 minutes.</p>`
-            });
-            console.log(`OTP sent to ${email}`);
-          } catch (e) {
+          this.mailerService.sendMail({
+              to: email,
+              subject: 'Login OTP Code - Cham Cong App',
+              html: `<p>Your OTP code is: <b>${otp}</b></p><p>Valid for 5 minutes.</p>`
+          }).then(() => {
+              console.log(`OTP sent to ${email}`);
+          }).catch(e => {
               console.error('Send mail failed:', e);
-              // Fallback? Or just log.
-          }
+          });
       } else {
         console.warn(`User ${username} has 2FA enabled but no email!`);
       }
