@@ -34,6 +34,16 @@ export class User {
 
   @Prop({ default: true })
   isActive: boolean;
+
+  // 2FA Fields
+  @Prop({ default: false })
+  isTwoFactorEnabled: boolean;
+
+  @Prop({ select: false }) // Hide from queries by default
+  otp?: string;
+
+  @Prop({ type: Date, select: false })
+  otpExpires?: Date;
 }
 
 export const UserSchema = SchemaFactory.createForClass(User);
