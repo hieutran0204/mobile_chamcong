@@ -23,12 +23,12 @@ export class AuthController {
   @Post('register-owner')
   async registerOwner(@Body() dto: RegisterDto) {
     // Expect name in DTO now
-    return this.authService.registerOwner(dto.username, dto.password, dto.name || 'Owner');
+    return this.authService.registerOwner(dto.username, dto.password, dto.name || 'Owner', dto.email);
   }
 
   @Post('register-admin')
   async registerAdmin(@Body() dto: RegisterDto) {
-    return this.authService.registerAdmin(dto.username, dto.password, dto.name || 'System Admin');
+    return this.authService.registerAdmin(dto.username, dto.password, dto.name || 'System Admin', dto.email);
   }
 
   @Post('login')
@@ -41,16 +41,6 @@ export class AuthController {
       return this.authService.verify2FA(dto.username, dto.otp);
   }
 
-  @Get('test-mail')
-  async testMail(@Query('email') email: string) {
-    if (!email) return { error: 'Please provide ?email=...' };
-    try {
-      await this.authService.testSendMail(email);
-      return { success: true, message: 'Email sent successfully to ' + email };
-    } catch (e) {
-      return { success: false, error: e.message, stack: e.stack, details: e };
-    }
-  }
 
   @Post('enable-2fa')
   @UseGuards(JwtAuthGuard)
