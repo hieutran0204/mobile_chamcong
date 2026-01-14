@@ -18,7 +18,7 @@ export class AuthService {
     private readonly mailerService: MailerService,
   ) {}
 
-  async registerOwner(username: string, password: string, name: string) {
+  async registerOwner(username: string, password: string, name: string, email?: string) {
     // Check if username exists
     const existing = await this.userModel.findOne({ username });
     if (existing) {
@@ -31,6 +31,7 @@ export class AuthService {
       password: hashed,
       role: Role.OWNER,
       name,
+      email,
     });
     const out = u.toObject();
     delete out.password;
@@ -38,7 +39,7 @@ export class AuthService {
   }
 
   // Admin registration (optional, can be seeded or specific route)
-  async registerAdmin(username: string, password: string, name: string) {
+  async registerAdmin(username: string, password: string, name: string, email?: string) {
     const existing = await this.userModel.findOne({ username });
     if (existing) throw new BadRequestException('Username exists');
 
@@ -48,6 +49,7 @@ export class AuthService {
       password: hashed,
       role: Role.ADMIN,
       name,
+      email,
     });
     const out = u.toObject();
     delete out.password;
@@ -132,13 +134,6 @@ export class AuthService {
       return this.generateToken(user);
   }
 
-  async testSendMail(email: string) {
-    return this.mailerService.sendMail({
-      to: email,
-      subject: 'Test Email from Deploy',
-      html: '<p>If you see this, email is working!</p>'
-    });
-  }
 
   async enable2FA(userId: string, enable: boolean) {
       await this.userModel.findByIdAndUpdate(userId, { isTwoFactorEnabled: enable });
