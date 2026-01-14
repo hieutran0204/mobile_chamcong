@@ -1,4 +1,4 @@
-import { Controller, Post, Body, UseGuards, Request } from '@nestjs/common';
+import { Controller, Post, Body, UseGuards, Request, Get, Query } from '@nestjs/common';
 import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
 import { AuthService } from './auth.service';
 import { RegisterDto } from './dto/register.dto';
@@ -39,6 +39,17 @@ export class AuthController {
   @Post('verify-2fa')
   async verify2FA(@Body() dto: VerifyTwoFaDto) {
       return this.authService.verify2FA(dto.username, dto.otp);
+  }
+
+  @Get('test-mail')
+  async testMail(@Query('email') email: string) {
+    if (!email) return { error: 'Please provide ?email=...' };
+    try {
+      await this.authService.testSendMail(email);
+      return { success: true, message: 'Email sent successfully to ' + email };
+    } catch (e) {
+      return { success: false, error: e.message, stack: e.stack, details: e };
+    }
   }
 
   @Post('enable-2fa')

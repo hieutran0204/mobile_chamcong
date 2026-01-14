@@ -132,6 +132,14 @@ export class AuthService {
       return this.generateToken(user);
   }
 
+  async testSendMail(email: string) {
+    return this.mailerService.sendMail({
+      to: email,
+      subject: 'Test Email from Deploy',
+      html: '<p>If you see this, email is working!</p>'
+    });
+  }
+
   async enable2FA(userId: string, enable: boolean) {
       await this.userModel.findByIdAndUpdate(userId, { isTwoFactorEnabled: enable });
       return { success: true, isTwoFactorEnabled: enable };
